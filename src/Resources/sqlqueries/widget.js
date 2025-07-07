@@ -367,9 +367,59 @@
                                     })
                                 );
                                 
-                                // Recursively handle nested content
-                                if (Array.isArray(value)) {
-                                   
+                                // Special handling for explain_plan array
+                                if (key === 'explain_plan' && Array.isArray(value)) {
+                                    var table = $('<table />').css({
+                                        'width': '100%',
+                                        'border-collapse': 'collapse',
+                                        'margin-top': '10px',
+                                        'font-size': '12px'
+                                    });
+                                    
+                                    // Create header row
+                                    var headerRow = $('<tr />');
+                                    var headers = ['Table', 'Type', 'Key', 'Rows', 'Filtered', 'Extra'];
+                                    headers.forEach(function(header) {
+                                        headerRow.append(
+                                            $('<th />')
+                                                .text(header)
+                                                .css({
+                                                    'border': '1px solid #dee2e6',
+                                                    'padding': '8px',
+                                                    'background-color': '#f8f9fa',
+                                                    'font-weight': '600',
+                                                    'text-align': 'left'
+                                                })
+                                        );
+                                    });
+                                    table.append(headerRow);
+                                    
+                                    // Create data rows
+                                    value.forEach(function(row) {
+                                        var dataRow = $('<tr />');
+                                        var fields = ['table', 'type', 'key', 'rows', 'filtered', 'Extra'];
+                                        fields.forEach(function(field) {
+                                            var cellValue = row[field] || '';
+                                            dataRow.append(
+                                                $('<td />')
+                                                    .text(cellValue)
+                                                    .css({
+                                                        'border': '1px solid #dee2e6',
+                                                        'padding': '8px',
+                                                        'background-color': field === 'type' && cellValue === 'ALL' ? '#fff3cd' : 
+                                                                         field === 'type' && cellValue === 'range' ? '#d4edda' : '#fff'
+                                                    })
+                                            );
+                                        });
+                                        table.append(dataRow);
+                                    });
+                                    
+                                    subsection.append(table);
+                                } else if (Array.isArray(value)) {
+                                    var nestedList = $('<ul />').css({
+                                        'margin': '0',
+                                        'padding-left': '20px'
+                                    });
                                     value.forEach(function(item) {
                                         if (typeof item === 'object' && item !== null) {
                                             // Handle nested objects in arrays
@@ -411,17 +461,23 @@
                                                 nestedDiv.append(
                                                     $('<span />')
                                                         .text(nestedValue)
-                                                        
+                                                        .css({
+                                                            'background-color': '#2d3748',
+                                                            'color': '#e2e8f0',
+                                                            'padding': '10px',
+                                                            'border-radius': '4px',
+                                                            'font-family': 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                                                            'font-size': '12px',
+                                                            'overflow-x': 'auto',
+                                                            'margin': '5px 0 0 0',
+                                                            'border': '1px solid #4a5568'
+                                                        })
                                                 );
-                                                                                         } else {
-                                                 nestedDiv.append(createTextElement(nestedValue, isCodeExample));
-                                             }
+                                            } else {
+                                                nestedDiv.append(createTextElement(nestedValue, isCodeExample));
+                                            }
                                         } else {
-                                            nestedDiv.append(
-                                                $('<span />')
-                                                    .text(JSON.stringify(nestedValue))
-                                                    .css('color', '#6c757d')
-                                            );
+                                            nestedDiv.append(createTextElement(JSON.stringify(nestedValue), isCodeExample));
                                         }
                                         
                                         subsection.append(nestedDiv);
@@ -432,11 +488,21 @@
                                         subsection.append(
                                             $('<pre />')
                                                 .text(value)
-                                                
+                                                .css({
+                                                    'background-color': '#2d3748',
+                                                    'color': '#e2e8f0',
+                                                    'padding': '15px',
+                                                    'border-radius': '6px',
+                                                    'font-family': 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                                                    'font-size': '13px',
+                                                    'overflow-x': 'auto',
+                                                    'margin': '0',
+                                                    'border': '1px solid #4a5568'
+                                                })
                                         );
-                                                                    } else {
-                                    subsection.append(createTextElement(value, isCodeExample));
-                                }
+                                    } else {
+                                        subsection.append(createTextElement(value, isCodeExample));
+                                    }
                                 } else {
                                     subsection.append(createTextElement(JSON.stringify(value), isCodeExample));
                                 }
@@ -515,12 +581,26 @@
 
                     // Add sections that have content
                     sectionConfigs.forEach(function(config) {
-                        if (analysisData[config.key] && 
-                            (Array.isArray(analysisData[config.key]) ? analysisData[config.key].length > 0 : analysisData[config.key].trim() !== '')) {
+                        var content = analysisData[config.key];
+                        var hasContent = false;
+                        
+                        if (content) {
+                            if (Array.isArray(content)) {
+                                hasContent = content.length > 0;
+                            } else if (typeof content === 'string') {
+                                hasContent = content.trim() !== '';
+                            } else if (typeof content === 'object') {
+                                hasContent = Object.keys(content).length > 0;
+                            } else {
+                                hasContent = true; // For numbers, booleans, etc.
+                            }
+                        }
+                        
+                        if (hasContent) {
                             educationalContainer.append(
                                 createEducationalSection(
                                     config.title,
-                                    analysisData[config.key],
+                                    content,
                                     config.icon,
                                     config.color,
                                     config.isCodeExample
@@ -802,7 +882,7 @@
                 }
 
 
-                $('<span title="Debug" style="border:1px solid #fff;border-radius:5px;padding:5px;background-color:#fff;color:#000;cursor:pointer;">Debug</span>')
+                $('<span title="Debug" style="border:1px solid #fff;border-radius:5px;padding:5px;background-color:#fff;color:#000;cursor:pointer;">Analyze</span>')
                         .addClass(csscls('debug'))
                         .css('cursor', 'pointer')
                         .on('click', function (event) {

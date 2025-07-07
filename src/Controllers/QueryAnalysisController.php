@@ -78,10 +78,12 @@ use Laravel\Telescope\Telescope;
                 
                 **CODE EXAMPLES FORMAT:**
                 - Return code_examples as an array of strings
-                - Each string should be one complete, copy-pasteable code example
-                - Use proper indentation and line breaks within each example for readability
-                - Include both Eloquent queries and migration code as separate array items.  If the migration is for an existing table then don't use Schema::create() use Schema::table()
-                - Format as: [Complete example 1 with formatting, Complete example 2 with formatting]
+                - Each string should be ONE COMPLETE code example (not individual lines)
+                - Each array item should contain a full code block with proper formatting
+                - DO NOT split code into separate array items per line
+                - Include both Eloquent queries and migration code as separate array items
+                - If the migration is for an existing table then don't use Schema::create() use Schema::table()
+                - Format as: [Complete example 1, Complete example 2]
                 
                 Show the explain plan in your response.  
                 Include a summary of the tools you ran.
@@ -160,10 +162,15 @@ use Laravel\Telescope\Telescope;
                         Return your response as a JSON object with these educational sections, in this order    :
                         {
                             "query_explanation": "Simple explanation of what this query does, and what (if anything) is wrong with it.  If source code is analysed or some conditions dont use bindings explain any security concerns (if applicable)",
-                            "explain_plan_analysis": "Show the explain plan and the features, indexes and other details, how many rows are filtered ,etc explain it in simple terms",
+                            "explain_plan_analysis":  {
+                                "explain_plan": [
+                                    {..row from explain plan..}
+                                ],
+                                "summary": "Summary of the explain plan, the features, indexes and other details, how many rows are filtered ,etc explain it in simple terms",
+                            },
                             "performance_lessons": ["List of key performance concepts to learn"],
                             "improvement_steps": ["Step-by-step actions they can take"],
-                            "code_examples": ["List of specific Eloquent code examples they can try. Each array item should be one complete example with proper indentation and line breaks for readability and be wrapped in <?php and ?> tags.  Include comments explaining what the code does and why it is needed"],
+                            "code_examples": ["List of specific Eloquent code examples they can try. Each array item should be ONE COMPLETE code example (not individual lines). Include comments explaining what the code does and why it is needed"],
                             "common_mistakes": ["Common Eloquent patterns that cause this"],
                             "learning_progression": ["What they should learn next to improve"]
                         }
