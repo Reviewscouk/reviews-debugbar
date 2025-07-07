@@ -39,4 +39,9 @@ app('router')->group($routeConfig, function ($router) {
         'uses' => 'CacheController@delete',
         'as' => 'debugbar.cache.delete',
     ]);
+
+    $router->post('analyze-query', [
+        'uses' => 'QueryAnalysisController@analyze',
+        'as' => 'debugbar.analyze-query',
+    ]);
 });

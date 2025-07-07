@@ -52,6 +52,697 @@
             select(code);
         },
 
+        onDebugClick: function (el) {
+            var li = $(el).parent('li');
+            var stmt = li.data('stmt');
+            var sqlCode = li.find('code').html();
+            var self = this;
+            
+            
+            
+            // Create modal
+            var modal = $('<div />')
+                .addClass(csscls('debug-modal'))
+                .css({
+                    'position': 'fixed',
+                    'top': '0',
+                    'left': '0',
+                    'width': '100%',
+                    'height': '100%',
+                    'background-color': 'rgba(0, 0, 0, 0.5)',
+                    'z-index': '999999999',
+                    'display': 'flex',
+                    'justify-content': 'center'
+                });
+
+            var modalContent = $('<div />')
+                .addClass(csscls('debug-modal-content'))
+                .css({
+                    'background-color': '#fff',
+                    'border-radius': '8px',
+                    'padding': '20px',
+                    'max-width': '80%',
+                    'max-height': '80%',
+                    'overflow': 'auto',
+                    'position': 'relative',
+                    'box-shadow': '0 4px 6px rgba(0, 0, 0, 0.1)',
+                    'margin-top': '100px'
+                });
+
+            var closeBtn = $('<button />')
+                .text('×')
+                .css({
+                    'position': 'absolute',
+                    'top': '10px',
+                    'right': '15px',
+                    'background': 'none',
+                    'border': 'none',
+                    'font-size': '24px',
+                    'cursor': 'pointer',
+                    'color': '#666'
+                })
+                .on('click', function() {
+                    modal.remove();
+                });
+
+            var title = $('<h3 />')
+                .text('SQL Query')
+                .css({
+                    'margin-top': '0',
+                    'margin-bottom': '20px',
+                    'color': '#333',
+                    'font-size': '24px',
+                    'font-weight': '600'
+                });
+
+            var content = $('<div />');
+
+            // SQL Query
+            if (sqlCode) {
+                content.append(
+                    $('<div />')
+                        .addClass(csscls('sql-debug'))
+                        .html(sqlCode)
+                        .css({
+                            'background-color': '#f5f5f5',
+                            'padding': '15px',
+                            'border-radius': '4px',
+                            'font-family': 'monospace',
+                            'white-space': 'pre-wrap',
+                            'margin-bottom': '20px'
+                        })
+                );
+            }
+
+            // Statement data
+            if (stmt) {
+                var stmtInfo = $('<div />');
+                
+                if (stmt.duration_str) {
+                    stmtInfo.append(
+                        $('<p />').html('<strong>Duration:</strong> ' + stmt.duration_str)
+                    );
+                }
+                
+                if (stmt.memory_str) {
+                    stmtInfo.append(
+                        $('<p />').html('<strong>Memory Usage:</strong> ' + stmt.memory_str)
+                    );
+                }
+                
+                if (typeof(stmt.row_count) != 'undefined') {
+                    stmtInfo.append(
+                        $('<p />').html('<strong>Row Count:</strong> ' + stmt.row_count)
+                    );
+                } 
+                
+                content.append(stmtInfo);
+            }
+
+            // Add analysis section
+            var analysisSection = $('<div />')
+                .addClass(csscls('analysis-section'))
+                .css({
+                    'margin-top': '20px',
+                    'border-top': '1px solid #eee',
+                    'padding-top': '20px'
+                });
+
+
+    
+
+            var loadingIndicator = $('<div />')
+                .html('Analyzing Query')
+                .css({
+                    'color': '#666',
+                    'font-style': 'italic',
+                    'text-align': 'center',
+                    'padding': '20px'
+                });
+
+            var analysisResults = $('<div />')
+                .addClass(csscls('analysis-results'))
+                .css('margin-top', '10px');
+
+            analysisSection.append(loadingIndicator, analysisResults);
+            content.append(analysisSection);
+
+            modalContent.append(closeBtn, title, content);
+            modal.append(modalContent);
+            
+            // Close modal when clicking outside
+            modal.on('click', function(e) {
+                if (e.target === modal[0]) {
+                    modal.remove();
+                }
+            });
+            
+            // Close modal with Escape key
+            $(document).on('keydown.debug-modal', function(e) {
+                if (e.keyCode === 27) { // Escape key
+                    modal.remove();
+                    $(document).off('keydown.debug-modal');
+                }
+            });
+            
+            $('body').append(modal);
+
+            // Make backend calls for query analysis
+            if (stmt && stmt.sql) {
+                self.performQueryAnalysis(stmt, analysisResults, loadingIndicator);
+            }
+        },
+
+        performQueryAnalysis: function(stmt, resultsContainer, loadingIndicator) {
+            var self = this;
+            
+            // Make AJAX call to backend analysis endpoint
+            $.ajax({
+                url: '/_debugbar/analyze-query',
+                method: 'POST',
+                data: JSON.stringify({ sql: stmt.sql }),
+                contentType: 'application/json',
+                dataType: 'json',
+                success: function(response) {
+                    loadingIndicator.hide();
+                    self.displayOpenAIAnalysis(response, resultsContainer);
+                },
+                error: function(xhr, status, error) {
+                    loadingIndicator.hide();
+                    self.displayAnalysisError(error, resultsContainer);
+                }
+            });
+        },
+
+        displayOpenAIAnalysis: function(response, container) {
+            container.empty();
+            
+            if (response.success && response.analysis) {
+                try {
+                    // Parse the JSON response
+                    var analysisData = JSON.parse(response.analysis);
+                    console.log(analysisData);
+                    
+                    // Helper function to create appropriate text element
+                    var createTextElement = function(text, isCodeExample) {
+                        // Convert escaped newlines to actual newlines
+                        var processedText = text.replace(/\\n/g, '\n');
+                        
+                        // Only render as code if it's from code_examples property
+                        if (isCodeExample && isCode(processedText)) {
+                            return $('<pre />')
+                                .text(processedText)
+                                .css({
+                                    'background-color': '#2d3748',
+                                    'color': '#e2e8f0',
+                                    'padding': '15px',
+                                    'border-radius': '6px',
+                                    'font-family': 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                                    'font-size': '13px',
+                                    'overflow-x': 'auto',
+                                    'margin': '0',
+                                    'border': '1px solid #4a5568'
+                                });
+                        } else {
+                            return $('<p />')
+                                .html(processedText.replace(/\n/g, '<br>'))
+                                .css({
+                                    'line-height': '1.6',
+                                    'font-size': '14px',
+                                    'color': '#4a5568',
+                                    'margin': '0 0 10px 0'
+                                });
+                        }
+                    };
+                    
+                    // Helper function to detect if text is code
+                    var isCode = function(text) {
+                        return text.includes('<?php') || text.includes('->') ;
+                    };
+
+                    // Create main educational container
+                    var educationalContainer = $('<div />')
+                        .addClass(csscls('educational-analysis'))
+                        .css({
+                            'margin-bottom': '20px'
+                        });
+
+                    // Helper function to create educational sections
+                    var createEducationalSection = function(title, content, icon, color, isCodeExample) {
+                        var section = $('<div />')
+                            .addClass(csscls('educational-section'))
+                            .css({
+                                'margin-bottom': '25px',
+                                'padding': '20px',
+                                'background-color': color || '#f8f9fa',
+                                'border-radius': '8px',
+                                'border-left': '4px solid #007bff',
+                                'box-shadow': '0 2px 4px rgba(0,0,0,0.1)'
+                            });
+
+                        var sectionHeader = $('<div />')
+                            .css({
+                                'display': 'flex',
+                                'align-items': 'center',
+                                'margin-bottom': '15px'
+                            });
+
+                        var iconElement = $('<span />')
+                            .html(icon || '📚')
+                            .css({
+                                'font-size': '20px',
+                                'margin-right': '10px'
+                            });
+
+                        var titleElement = $('<h5 />')
+                            .text(title)
+                            .css({
+                                'margin': '0',
+                                'color': '#333',
+                                'font-weight': '600',
+                                'font-size': '16px'
+                            });
+
+                        sectionHeader.append(iconElement, titleElement);
+                        section.append(sectionHeader);
+
+                        // Handle different content types
+                        if (Array.isArray(content)) {
+                            var list = $('<ul />').css({
+                                'margin': '0',
+                                'padding-left': '20px'
+                            });
+                            content.forEach(function(item) {
+                                var listItem = $('<li />').css({
+                                    'margin-bottom': '8px',
+                                    'line-height': '1.5'
+                                });
+                                
+                                if (typeof item === 'string') {
+                                    listItem.append(createTextElement(item, isCodeExample));
+                                } else {
+                                    listItem.text(JSON.stringify(item));
+                                }
+                                
+                                list.append(listItem);
+                            });
+                            section.append(list);
+                        } else if (typeof content === 'object' && content !== null) {
+                            // Handle nested object content
+                            Object.keys(content).forEach(function(key) {
+                                var value = content[key];
+                                var subsection = $('<div />').css('margin-bottom', '15px');
+                                
+                                // Format the key as a heading
+                                var heading = key.replace(/_/g, ' ').replace(/\b\w/g, function(l) {
+                                    return l.toUpperCase();
+                                });
+                                
+                                subsection.append(
+                                    $('<h6 />').text(heading).css({
+                                        'margin-bottom': '8px',
+                                        'color': '#495057',
+                                        'font-size': '14px',
+                                        'font-weight': '600'
+                                    })
+                                );
+                                
+                                // Recursively handle nested content
+                                if (Array.isArray(value)) {
+                                   
+                                    value.forEach(function(item) {
+                                        if (typeof item === 'object' && item !== null) {
+                                            // Handle nested objects in arrays
+                                            var nestedItem = $('<li />').css('margin-bottom', '8px');
+                                            Object.keys(item).forEach(function(nestedKey) {
+                                                var nestedValue = item[nestedKey];
+                                                nestedItem.append(
+                                                    $('<strong />').text(nestedKey.replace(/_/g, ' ') + ': ').css('color', '#495057'),
+                                                    $('<span />').text(nestedValue).css('color', '#6c757d')
+                                                );
+                                                nestedItem.append($('<br />'));
+                                            });
+                                            nestedList.append(nestedItem);
+                                        } else {
+                                            nestedList.append(
+                                                $('<li />')
+                                                    .text(item)
+                                                    .css({
+                                                        'margin-bottom': '8px',
+                                                        'line-height': '1.5'
+                                                    })
+                                            );
+                                        }
+                                    });
+                                    subsection.append(nestedList);
+                                } else if (typeof value === 'object' && value !== null) {
+                                    // Handle nested objects
+                                    Object.keys(value).forEach(function(nestedKey) {
+                                        var nestedValue = value[nestedKey];
+                                        var nestedDiv = $('<div />').css('margin-bottom', '8px');
+                                        
+                                        nestedDiv.append(
+                                            $('<strong />').text(nestedKey.replace(/_/g, ' ') + ': ').css('color', '#495057')
+                                        );
+                                        
+                                        if (typeof nestedValue === 'string') {
+                                            // Check if it looks like code
+                                            if (isCode(nestedValue)) {
+                                                nestedDiv.append(
+                                                    $('<span />')
+                                                        .text(nestedValue)
+                                                        
+                                                );
+                                                                                         } else {
+                                                 nestedDiv.append(createTextElement(nestedValue, isCodeExample));
+                                             }
+                                        } else {
+                                            nestedDiv.append(
+                                                $('<span />')
+                                                    .text(JSON.stringify(nestedValue))
+                                                    .css('color', '#6c757d')
+                                            );
+                                        }
+                                        
+                                        subsection.append(nestedDiv);
+                                    });
+                                } else if (typeof value === 'string') {
+                                    // Check if it looks like code
+                                    if (isCode(value)) {
+                                        subsection.append(
+                                            $('<pre />')
+                                                .text(value)
+                                                
+                                        );
+                                                                    } else {
+                                    subsection.append(createTextElement(value, isCodeExample));
+                                }
+                                } else {
+                                    subsection.append(createTextElement(JSON.stringify(value), isCodeExample));
+                                }
+                                
+                                section.append(subsection);
+                            });
+                        } else if (typeof content === 'string') {
+                            // Check if it looks like code
+                            if (isCode(content)) {
+                                // Code content
+                                section.append(
+                                    $('<pre />').text(content)
+                                        
+                                );
+                            } else {
+                                // Regular text
+                                section.append(createTextElement(content, isCodeExample));
+                            }
+                        }
+
+                        return section;
+                    };
+
+                    // Process each section of the educational content in the specified order
+                    var sectionConfigs = [
+                        {
+                            key: 'query_explanation',
+                            title: 'What This Query Does',
+                            icon: '🔍',
+                            color: '#e6f3ff'
+                        },
+                        {
+                            key: 'explain_plan_analysis',
+                            title: 'EXPLAIN Plan Analysis',
+                            icon: '📊',
+                            color: '#f3e5f5'
+                        },
+                        {
+                            key: 'performance_lessons',
+                            title: 'Key Performance Lessons',
+                            icon: '⚡',
+                            color: '#d4edda'
+                        },
+                        {
+                            key: 'improvement_steps',
+                            title: 'Step-by-Step Improvements',
+                            icon: '📈',
+                            color: '#d1ecf1'
+                        },
+                        {
+                            key: 'code_examples',
+                            title: 'Try This Code',
+                            icon: '💻',
+                            color: '#e2e3e5',
+                            isCodeExample: true
+                        },
+                        {
+                            key: 'common_mistakes',
+                            title: 'Common Mistakes to Avoid',
+                            icon: '⚠️',
+                            color: '#f8d7da'
+                        },
+                        {
+                            key: 'learning_resources',
+                            title: 'Further Learning',
+                            icon: '📖',
+                            color: '#fff3e0'
+                        },
+                        {
+                            key: 'learning_progression',
+                            title: 'What to Learn Next',
+                            icon: '🎯',
+                            color: '#e1f5fe'
+                        }
+                    ];
+
+                    // Add sections that have content
+                    sectionConfigs.forEach(function(config) {
+                        if (analysisData[config.key] && 
+                            (Array.isArray(analysisData[config.key]) ? analysisData[config.key].length > 0 : analysisData[config.key].trim() !== '')) {
+                            educationalContainer.append(
+                                createEducationalSection(
+                                    config.title,
+                                    analysisData[config.key],
+                                    config.icon,
+                                    config.color,
+                                    config.isCodeExample
+                                )
+                            );
+                        }
+                    });
+
+                    // Add a motivational footer
+                    var footer = $('<div />')
+                        .addClass(csscls('educational-footer'))
+                        .css({
+                            'text-align': 'center',
+                            'margin-top': '30px',
+                            'padding': '20px',
+                            'background-color': '#f8f9fa',
+                            'border-radius': '8px',
+                            'border': '1px solid #dee2e6'
+                        });
+
+
+                    educationalContainer.append(footer);
+                    container.append(educationalContainer);
+                    
+                } catch (e) {
+                    // Fallback to plain text if JSON parsing fails
+                    console.error('JSON parsing error:', e);
+                    console.log('Raw response:', response.analysis);
+                    
+                    var fallbackSection = createEducationalSection(
+                        'AI Analysis',
+                        'There was an issue parsing the AI response. Here\'s what we received:\n\n' + response.analysis,
+                        '🤖',
+                        '#f8f9fa',
+                        false
+                    );
+                    container.append(fallbackSection);
+                }
+            } else if (response.error) {
+                container.append(
+                    $('<div />')
+                        .text('Analysis Error: ' + response.error)
+                        .css({
+                            'color': '#dc3545',
+                            'padding': '15px',
+                            'background-color': '#f8d7da',
+                            'border-radius': '6px',
+                            'border': '1px solid #f5c6cb',
+                            'text-align': 'center'
+                        })
+                );
+            }
+        },
+
+        displayAnalysisError: function(error, container) {
+            container.empty().append(
+                $('<div />')
+                    .text('Error analyzing query: ' + error)
+                    .css({
+                        'color': '#dc3545',
+                        'padding': '10px',
+                        'background-color': '#f8d7da',
+                        'border-radius': '4px',
+                        'border': '1px solid #f5c6cb'
+                    })
+            );
+        },
+
+
+
+        extractTableNames: function(sql) {
+            if (!sql || typeof sql !== 'string') {
+                return [];
+            }
+
+            var tables = [];
+            var sqlUpper = sql.toUpperCase();
+            
+            // Remove comments
+            sql = sql.replace(/--.*$/gm, ''); // Single line comments
+            sql = sql.replace(/\/\*[\s\S]*?\*\//g, ''); // Multi-line comments
+            
+            // Remove string literals to avoid false positives
+            sql = sql.replace(/'(?:[^'\\]|\\.)*'/g, ''); // Single quotes
+            sql = sql.replace(/"(?:[^"\\]|\\.)*"/g, ''); // Double quotes
+            sql = sql.replace(/`(?:[^`\\]|\\.)*`/g, ''); // Backticks
+            
+            // Common SQL patterns for table names
+            var patterns = [
+                // FROM clause
+                /\bFROM\s+([a-zA-Z_][a-zA-Z0-9_]*\s*(?:AS\s+[a-zA-Z_][a-zA-Z0-9_]*)?)/gi,
+                /\bFROM\s+`([^`]+)`/gi,
+                /\bFROM\s+"([^"]+)"/gi,
+                /\bFROM\s+\[([^\]]+)\]/gi,
+                
+                // JOIN clauses
+                /\bJOIN\s+([a-zA-Z_][a-zA-Z0-9_]*\s*(?:AS\s+[a-zA-Z_][a-zA-Z0-9_]*)?)/gi,
+                /\bJOIN\s+`([^`]+)`/gi,
+                /\bJOIN\s+"([^"]+)"/gi,
+                /\bJOIN\s+\[([^\]]+)\]/gi,
+                
+                // LEFT/RIGHT/INNER/OUTER JOIN
+                /\b(?:LEFT|RIGHT|INNER|OUTER|CROSS|NATURAL)\s+JOIN\s+([a-zA-Z_][a-zA-Z0-9_]*\s*(?:AS\s+[a-zA-Z_][a-zA-Z0-9_]*)?)/gi,
+                /\b(?:LEFT|RIGHT|INNER|OUTER|CROSS|NATURAL)\s+JOIN\s+`([^`]+)`/gi,
+                /\b(?:LEFT|RIGHT|INNER|OUTER|CROSS|NATURAL)\s+JOIN\s+"([^"]+)"/gi,
+                /\b(?:LEFT|RIGHT|INNER|OUTER|CROSS|NATURAL)\s+JOIN\s+\[([^\]]+)\]/gi,
+                
+                // INSERT INTO
+                /\bINSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+                /\bINSERT\s+INTO\s+`([^`]+)`/gi,
+                /\bINSERT\s+INTO\s+"([^"]+)"/gi,
+                /\bINSERT\s+INTO\s+\[([^\]]+)\]/gi,
+                
+                // UPDATE
+                /\bUPDATE\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+                /\bUPDATE\s+`([^`]+)`/gi,
+                /\bUPDATE\s+"([^"]+)"/gi,
+                /\bUPDATE\s+\[([^\]]+)\]/gi,
+                
+                // DELETE FROM
+                /\bDELETE\s+FROM\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+                /\bDELETE\s+FROM\s+`([^`]+)`/gi,
+                /\bDELETE\s+FROM\s+"([^"]+)"/gi,
+                /\bDELETE\s+FROM\s+\[([^\]]+)\]/gi,
+                
+                // CREATE TABLE
+                /\bCREATE\s+(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+                /\bCREATE\s+(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`([^`]+)`/gi,
+                /\bCREATE\s+(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"([^"]+)"([^"]+)"/gi,
+                /\bCREATE\s+(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?\[([^\]]+)\]/gi,
+                
+                // DROP TABLE
+                /\bDROP\s+(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+EXISTS\s+)?([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+                /\bDROP\s+(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+EXISTS\s+)?`([^`]+)`/gi,
+                /\bDROP\s+(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+EXISTS\s+)?"([^"]+)"/gi,
+                /\bDROP\s+(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+EXISTS\s+)?\[([^\]]+)\]/gi,
+                
+                // ALTER TABLE
+                /\bALTER\s+TABLE\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+                /\bALTER\s+TABLE\s+`([^`]+)`/gi,
+                /\bALTER\s+TABLE\s+"([^"]+)"/gi,
+                /\bALTER\s+TABLE\s+\[([^\]]+)\]/gi,
+                
+                // TRUNCATE TABLE
+                /\bTRUNCATE\s+(?:TABLE\s+)?([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+                /\bTRUNCATE\s+(?:TABLE\s+)?`([^`]+)`/gi,
+                /\bTRUNCATE\s+(?:TABLE\s+)?"([^"]+)"/gi,
+                /\bTRUNCATE\s+(?:TABLE\s+)?\[([^\]]+)\]/gi,
+                
+                // INTO clause (for SELECT INTO)
+                /\bINTO\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+                /\bINTO\s+`([^`]+)`/gi,
+                /\bINTO\s+"([^"]+)"/gi,
+                /\bINTO\s+\[([^\]]+)\]/gi
+            ];
+
+            patterns.forEach(function(pattern) {
+                var matches = sql.match(pattern);
+                if (matches) {
+                    matches.forEach(function(match, index) {
+                        if (index > 0) { // Skip the full match, get capture groups
+                            var tableName = match.trim();
+                            
+                            // Remove AS alias if present
+                            tableName = tableName.replace(/\s+AS\s+[a-zA-Z_][a-zA-Z0-9_]*$/i, '');
+                            tableName = tableName.replace(/\s+[a-zA-Z_][a-zA-Z0-9_]*$/i, '');
+                            
+                            // Clean up the table name
+                            tableName = tableName.replace(/^[`"\[\]]+|[`"\[\]]+$/g, ''); // Remove quotes/brackets
+                            
+                            if (tableName && tableName.length > 0 && !tables.includes(tableName)) {
+                                tables.push(tableName);
+                            }
+                        }
+                    });
+                }
+            });
+
+            // Handle subqueries and CTEs (Common Table Expressions)
+            var ctePattern = /\bWITH\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+AS\s*\(/gi;
+            var cteMatches = sql.match(ctePattern);
+            if (cteMatches) {
+                cteMatches.forEach(function(match) {
+                    var cteName = match.replace(/\bWITH\s+/i, '').replace(/\s+AS\s*\(/i, '').trim();
+                    if (cteName && !tables.includes(cteName)) {
+                        tables.push(cteName);
+                    }
+                });
+            }
+
+            return tables;
+        },
+
+        getTableAnalysis: function(sql) {
+            var tables = this.extractTableNames(sql);
+            var analysis = {
+                tables: tables,
+                table_count: tables.length,
+                has_subqueries: sql.toUpperCase().includes('SELECT') && (sql.match(/\(/g) || []).length > (sql.match(/\)/g) || []).length,
+                has_ctes: /WITH\s+[a-zA-Z_][a-zA-Z0-9_]*\s+AS/i.test(sql),
+                query_type: this.getQueryType(sql)
+            };
+            
+            return analysis;
+        },
+
+        getQueryType: function(sql) {
+            var sqlUpper = sql.toUpperCase().trim();
+            
+            if (sqlUpper.startsWith('SELECT')) return 'SELECT';
+            if (sqlUpper.startsWith('INSERT')) return 'INSERT';
+            if (sqlUpper.startsWith('UPDATE')) return 'UPDATE';
+            if (sqlUpper.startsWith('DELETE')) return 'DELETE';
+            if (sqlUpper.startsWith('CREATE TABLE')) return 'CREATE TABLE';
+            if (sqlUpper.startsWith('DROP TABLE')) return 'DROP TABLE';
+            if (sqlUpper.startsWith('ALTER TABLE')) return 'ALTER TABLE';
+            if (sqlUpper.startsWith('TRUNCATE')) return 'TRUNCATE';
+            if (sqlUpper.startsWith('WITH')) return 'CTE';
+            
+            return 'UNKNOWN';
+        },
+
         render: function () {
             this.$status = $('<div />').addClass(csscls('status')).appendTo(this.$el);
 
@@ -60,6 +751,8 @@
             var filters = [], self = this;
 
             this.$list = new PhpDebugBar.Widgets.ListWidget({ itemRenderer: function (li, stmt) {
+                // Store statement data in the list item for modal access
+                li.data('stmt', stmt);
                 if (stmt.type === 'transaction') {
                     $('<strong />').addClass(csscls('sql')).addClass(csscls('name')).text(stmt.sql).appendTo(li);
                 } else {
@@ -107,6 +800,17 @@
                     li.addClass(csscls('error'));
                     li.append($('<span />').addClass(csscls('error')).text("[" + stmt.error_code + "] " + stmt.error_message));
                 }
+
+
+                $('<span title="Debug" style="border:1px solid #fff;border-radius:5px;padding:5px;background-color:#fff;color:#000;cursor:pointer;">Debug</span>')
+                        .addClass(csscls('debug'))
+                        .css('cursor', 'pointer')
+                        .on('click', function (event) {
+                            self.onDebugClick(this);
+                            event.stopPropagation();
+                        })
+                        .appendTo(li);
+
                 if (stmt.show_copy) {
                     $('<span title="Copy to clipboard" />')
                         .addClass(csscls('copy-clipboard'))
